@@ -27,7 +27,7 @@ import com.google.gson.annotations.SerializedName;
 import java.io.Serializable;
 import java.util.Objects;
 
-public class Tag implements Serializable {
+public class Tag implements Serializable, Comparable<Tag> {
     @Expose
     @SerializedName("id") private int id;
 
@@ -62,5 +62,10 @@ public class Tag implements Serializable {
         Tag oTag = (Tag) obj;
         // The important is the name since the new tags always use the same empty id.
         return  (Objects.equals(this.name, oTag.getName()));
+    }
+
+    @Override
+    public int compareTo(Tag o) {
+        return this.getName().compareTo(o.getName());
     }
 }

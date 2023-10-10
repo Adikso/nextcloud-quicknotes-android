@@ -28,6 +28,7 @@ android {
     defaultConfig {
         applicationId 'ar.com.delellis.quicknotes'
         minSdkVersion 24
+        targetSdk 34
         compileSdkVersion 34
         versionCode 1
         versionName "0.3.0"

@@ -21,10 +21,25 @@
 
 package ar.com.delellis.quicknotes.activity.main;
 
+import static android.view.View.GONE;
+import static android.view.View.VISIBLE;
+import static ar.com.delellis.quicknotes.activity.main.NoteAdapter.ItemClickListener;
+import static ar.com.delellis.quicknotes.activity.main.NoteAdapter.SORT_BY_CREATED;
+import static ar.com.delellis.quicknotes.activity.main.NoteAdapter.SORT_BY_TITLE;
+import static ar.com.delellis.quicknotes.activity.main.NoteAdapter.SORT_BY_UPDATED;
+
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.text.TextUtils;
+import android.view.MenuItem;
+import android.view.SubMenu;
+
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.app.AppCompatDelegate;
 import androidx.appcompat.widget.AppCompatImageButton;
 import androidx.appcompat.widget.AppCompatImageView;
+import androidx.appcompat.widget.SearchView;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
@@ -35,30 +50,23 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.StaggeredGridLayoutManager;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.net.Uri;
-import android.os.Bundle;
-import android.text.TextUtils;
-import androidx.appcompat.widget.SearchView;
-
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.navigation.NavigationView;
 import com.nextcloud.android.sso.helper.SingleAccountHelper;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
-import ar.com.delellis.quicknotes.BuildConfig;
 import ar.com.delellis.quicknotes.R;
-import ar.com.delellis.quicknotes.activity.error.ErrorActivity;
-import ar.com.delellis.quicknotes.activity.login.LoginActivity;
 import ar.com.delellis.quicknotes.activity.about.AboutActivity;
 import ar.com.delellis.quicknotes.activity.editor.EditorActivity;
-import ar.com.delellis.quicknotes.activity.main.NavigationAdapter.NavigationItem;
-import ar.com.delellis.quicknotes.activity.main.NavigationAdapter.TagNavigationItem;
+import ar.com.delellis.quicknotes.activity.error.ErrorActivity;
+import ar.com.delellis.quicknotes.activity.login.LoginActivity;
 import ar.com.delellis.quicknotes.activity.main.SortingOrderDialogFragment.OnSortingOrderListener;
 import ar.com.delellis.quicknotes.api.ApiProvider;
 import ar.com.delellis.quicknotes.api.helper.IResponseCallback;
@@ -67,25 +75,10 @@ import ar.com.delellis.quicknotes.model.Note;
 import ar.com.delellis.quicknotes.model.Tag;
 import ar.com.delellis.quicknotes.util.CapabilitiesService;
 
-import static android.view.View.GONE;
-import static android.view.View.VISIBLE;
-import static ar.com.delellis.quicknotes.activity.main.NoteAdapter.*;
-import static ar.com.delellis.quicknotes.activity.main.NoteAdapter.SORT_BY_TITLE;
-import static ar.com.delellis.quicknotes.activity.main.NoteAdapter.SORT_BY_UPDATED;
-
-public class MainActivity extends AppCompatActivity implements MainView, OnSortingOrderListener {
+public class MainActivity extends AppCompatActivity implements MainView, OnSortingOrderListener, NavigationView.OnNavigationItemSelectedListener {
 
     private static final int INTENT_ADD = 100;
     private static final int INTENT_EDIT = 200;
-
-    public static final String ADAPTER_KEY_ALL = "all_notes";
-    public static final String ADAPTER_KEY_PINNED = "pinned";
-    public static final String ADAPTER_KEY_SHARED_BY = "shared_by";
-    public static final String ADAPTER_KEY_SHARED_WITH = "shared_with";
-    public static final String ADAPTER_KEY_TAG_PREFIX = "tag:";
-    public static final String ADAPTER_KEY_ABOUT = "about";
-    public static final String ADAPTER_KEY_DONATE = "donate";
-    public static final String ADAPTER_KEY_SWITCH_ACCOUNT = "switch_account";
 
     private SharedPreferences preferences;
 
@@ -102,10 +95,9 @@ public class MainActivity extends AppCompatActivity implements MainView, OnSorti
     private NoteAdapter noteAdapter;
     private ItemClickListener itemClickListener;
 
-    NavigationAdapter navigationFilterAdapter;
-    NavigationAdapter navigationCommonAdapter;
+    private NavigationView navigationView;
 
-    private List<Tag> tags = new ArrayList<>();
+    private Set<Tag> tags = new TreeSet<>();
 
     private List<String> colors = new ArrayList<>();
 
@@ -133,7 +125,7 @@ public class MainActivity extends AppCompatActivity implements MainView, OnSorti
 
             Intent intent = new Intent(this, EditorActivity.class);
             intent.putExtra("note", note);
-            intent.putExtra("tags", (Serializable) tags);
+            intent.putExtra("tags", new ArrayList<>(tags));
 
             startActivityForResult(intent, INTENT_EDIT);
         });
@@ -180,7 +172,6 @@ public class MainActivity extends AppCompatActivity implements MainView, OnSorti
         });
 
         setSupportActionBar(toolbar);
-        setupNavigationMenu();
 
         homeToolbar.setOnClickListener(view -> updateToolbars(false));
 
@@ -202,89 +193,65 @@ public class MainActivity extends AppCompatActivity implements MainView, OnSorti
 
         mApi = new ApiProvider(getApplicationContext());
         presenter.getNotes();
-    }
 
-    private void setupNavigationMenu() {
-        ArrayList<NavigationItem> navItems = new ArrayList<>();
-
-        navigationFilterAdapter = new NavigationAdapter(this, item -> {
-            if (item.id.equals(ADAPTER_KEY_ALL)) {
-                noteAdapter.getFilter().filter("");
-            } else if (item.id.equals(ADAPTER_KEY_PINNED)) {
-                noteAdapter.getPinnedFilter().filter("");
-            } else if (item.id.equals(ADAPTER_KEY_SHARED_BY)) {
-                noteAdapter.getIsSharedFilter().filter("");
-            } else if (item.id.equals(ADAPTER_KEY_SHARED_WITH)) {
-                noteAdapter.getSharedWithOthersFilter().filter("");
-            } else if (item.id.startsWith(ADAPTER_KEY_TAG_PREFIX)) {
-                noteAdapter.getTagFilter().filter(item.label);
-            }
-            navigationFilterAdapter.setSelectedItem(item.id);
-            drawerLayout.closeDrawer(GravityCompat.START);
-        });
-
-        RecyclerView navigationMenuFilter = findViewById(R.id.navigationFilter);
-        navigationMenuFilter.setAdapter(navigationFilterAdapter);
-
-        navigationCommonAdapter = new NavigationAdapter(this, item -> {
-            switch (item.id) {
-                case ADAPTER_KEY_ABOUT:
-                    startActivity(new Intent(this, AboutActivity.class));
-                    break;
-                case ADAPTER_KEY_DONATE:
-                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.url_donate))));
-                    break;
-                case ADAPTER_KEY_SWITCH_ACCOUNT:
-                    switch_account();
-                    break;
-            }
-        });
-
-        navItems.add(new NavigationItem(ADAPTER_KEY_ABOUT, getString(R.string.about), NavigationAdapter.ICON_INFO));
-        if (!BuildConfig.FLAVOR.equals("play"))
-            navItems.add(new NavigationItem(ADAPTER_KEY_DONATE, getString(R.string.donate), NavigationAdapter.ICON_FAVORITE));
-        navItems.add(new NavigationItem(ADAPTER_KEY_SWITCH_ACCOUNT, getString(R.string.switch_account), NavigationAdapter.ICON_LOGOUT));
-        navigationCommonAdapter.setItems(navItems);
-
-        RecyclerView navigationMenuCommon = findViewById(R.id.navigationCommon);
-
-        navigationCommonAdapter.setSelectedItem(ADAPTER_KEY_ALL);
-        navigationMenuCommon.setAdapter(navigationCommonAdapter);
+        navigationView = findViewById(R.id.navigation_drawer);
+        navigationView.setNavigationItemSelectedListener(this);
     }
 
     private void updateNavigationMenu(List<Note> notes) {
-        ArrayList<NavigationItem> navItems = new ArrayList<>();
-        NavigationItem homeNav = new NavigationItem(ADAPTER_KEY_ALL, getString(R.string.all_notes), NavigationAdapter.ICON_HOME);
-        navItems.add(homeNav);
+        boolean hasPinned = false;
+        boolean hasSharedWithYou = false;
+        boolean hasSharedWithOthers = false;
 
-        for (Note note: notes) {
+        for (Note note : notes) {
             if (note.getIsPinned()) {
-                navItems.add(new NavigationItem(ADAPTER_KEY_PINNED, getString(R.string.pinned), NavigationAdapter.ICON_PINNED));
-                break;
+                hasPinned = true;
+            }
+            if (!note.getShareBy().isEmpty()) {
+                hasSharedWithYou = true;
+            }
+            if (!note.getShareWith().isEmpty()) {
+                hasSharedWithOthers = true;
             }
         }
 
-        for (Note note: notes) {
-            if (note.getIsShared()) {
-                navItems.add(new NavigationItem(ADAPTER_KEY_SHARED_BY, getString(R.string.shared_with_you), NavigationAdapter.ICON_SHARED));
-                break;
-            }
+        navigationView.getMenu().findItem(R.id.pinned).setVisible(hasPinned);
+        navigationView.getMenu().findItem(R.id.shared_with_others).setVisible(hasSharedWithOthers);
+        navigationView.getMenu().findItem(R.id.shared_with_you).setVisible(hasSharedWithYou);
+
+        MenuItem tagsItem = navigationView.getMenu().findItem(R.id.tags_outer);
+        tagsItem.setVisible(!tags.isEmpty());
+
+        SubMenu subMenu = tagsItem.getSubMenu();
+        subMenu.clear();
+        for (Tag tag : tags) {
+            subMenu.add(R.id.tags, tag.getId(), 0, tag.getName())
+                    .setIcon(R.drawable.ic_tag_grey)
+                    .setCheckable(true);
+        }
+    }
+
+    @Override
+    public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+        drawerLayout.close();
+
+        if (item.getItemId() == R.id.about) {
+            startActivity(new Intent(this, AboutActivity.class));
+        } else if (item.getItemId() == R.id.switch_account) {
+            switch_account();
+        } else if (item.getItemId() == R.id.all) {
+            noteAdapter.getFilter().filter("");
+        } else if (item.getItemId() == R.id.pinned) {
+            noteAdapter.getPinnedFilter().filter("");
+        } else if (item.getItemId() == R.id.shared_with_others) {
+            noteAdapter.getSharedWithOthersFilter().filter("");
+        } else if (item.getItemId() == R.id.shared_with_you) {
+            noteAdapter.getIsSharedFilter().filter("");
+        } else if (item.getGroupId() == R.id.tags) {
+            noteAdapter.getTagFilter().filter(item.getTitle());
         }
 
-        for (Note note: notes) {
-            if (note.getShareWith().size() > 0) {
-                navItems.add(new NavigationItem(ADAPTER_KEY_SHARED_WITH, getString(R.string.shared_with_others), NavigationAdapter.ICON_SHARED));
-                break;
-            }
-        }
-
-        for (Tag tag: tags) {
-            TagNavigationItem item = new TagNavigationItem(ADAPTER_KEY_TAG_PREFIX + tag.getId(), tag.getName(), NavigationAdapter.ICON_TAG, tag.getId());
-            navItems.add(item);
-        }
-
-        navigationFilterAdapter.setSelectedItem(homeNav.id);
-        navigationFilterAdapter.setItems(navItems);
+        return true;
     }
 
     private void updateToolbars(boolean disableSearch) {
